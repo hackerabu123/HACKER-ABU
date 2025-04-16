@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Prediction GT</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: pink;
+      color: #000;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+
+    #mainApp {
+      max-width: 600px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(255, 105, 180, 0.4);
+    }
+
+    h1 {
+      font-size: 26px;
+      color: #d63384;
+      text-shadow: 0 0 10px #d63384;
+    }
+
+    h2 {
+      font-size: 20px;
+      color: #ff1493;
+    }
+
+    #stats, #currentPrediction {
+      background: #fff0f6;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    #prediction {
+      font-size: 22px;
+      font-weight: bold;
+      color: #c2185b;
+      text-shadow: 0 0 10px #c2185b;
+    }
+
+    .history-item {
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      background: #ffe6f0;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s ease;
+    }
+
+    .win { color: green; animation: pop 0.4s ease-in-out; font-weight: bold; }
+    .loss { color: red; font-weight: bold; }
+    .pending { color: orange; }
+
+    @keyframes pop {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div id="mainApp">
+    <h1>ABU S3X</h1>
+    <div id="stats">
+      <p>Wins: <span id="totalWins">0</span></p>
+      <p>Losses: <span id="totalLosses">0</span></p>
+      <p>Accuracy: <span id="accuracy">0%</span></p>
+    </div>
+
+    <div id="currentPrediction">
+      <p>Period: <span id="currentPeriod">-</span></p>
+      <p>Prediction: <span id="prediction">-</span></p>
+    </div>
+
+    <div id="history">
+      <h2>Prediction History</h2>
+    </div>
+  </div>
+
+  <script>
+    let historyData = [];
+    let totalWins = 0;
+    let totalLosses = 0;
+    let lastFetchedPeriod = null;
+    let lastPredictedPeriod = null;
+
+    const frequentNumbers = [4, 7, 9, 8, 6, 3, 1, 2];
+    const rareNumbers = [0, 5];
+
+    function getOppositeNumber(num) {
+      let n = parseInt(num);
+      for (let op of frequentNumbers) {
+        if (op !== n) return op;
+      }
+      return rareNumbers[0];
+    }
+
+    function analyzeTrend() {
+      let big = historyData.filter(item => item.actualSize === "BIG").length;
+      let small = historyData.filter(item => item.actualSize === "SMALL").length;
+      return big > small ? "BIG" : "SMALL";
+    }
+
+    function speak(text) {
+      const msg = new SpeechSynthesisUtterance(text);
+      msg.lang = "en-US";
+      speechSynthesis.speak(msg);
+    }
+
+    async function fetchGameResult() {
+      try {
+        let response = await fetch("https://api.bdg88zf.com/api/webapi/GetNoaverageEmerdList", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageSize: 10,
+            pageNo: 1,
+            typeId: 1,
+            language: 0,
+            random: "4a0522c6ecd8410496260e686be2a57c",
+            signature: "334B5E70A0C9B8918B0B15E517E2069C",
+            timestamp: Math.floor(Date.now() / 1000)
+          })
+        });
+
+        if (!response.ok) throw new Error("Fetch error");
+        let data = await response.json();
+        return data?.data?.list?.[0] || null;
+      } catch (e) {
+        console.error(e);
+        return null;
+      }
+    }
+
+    async function updatePrediction() {
+      let result = await fetchGameResult();
+      if (!result) return;
+
+      const currentPeriod = result.issueNumber;
+      const currentNumber = parseInt(result.number);
+      const currentSize = currentNumber >= 5 ? "BIG" : "SMALL";
+
+      // Update result if matching pending prediction exists
+      let existing = historyData.find(item => item.period === currentPeriod && item.status === "Pending");
+      if (existing) {
+        const win = existing.predictedSize === currentSize || existing.predictedNumber === currentNumber;
+        existing.status = win ? "WIN" : "LOSS";
+        existing.actualNumber = currentNumber;
+        existing.actualSize = currentSize;
+
+        speak(win ? "Win!" : "Loss!");
+        updateStats();
+        updateHistory();
+        return;
+      }
+
+      // Predict only for next period
+      const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
+      if (lastPredictedPeriod === nextPeriod) return;
+      lastPredictedPeriod = nextPeriod;
+
+      const predictedSize = analyzeTrend();
+      const predictedNumber = getOppositeNumber(currentNumber);
+
+      speak(`Next: ${predictedSize} and Number ${predictedNumber}`);
+
+      document.getElementById("currentPeriod").innerText = nextPeriod;
+      document.getElementById("prediction").innerText = `${predictedSize} (${predictedNumber})`;
+
+      historyData.unshift({
+        period: nextPeriod,
+        predictedSize,
+        predictedNumber,
+        actualNumber: "-",
+        actualSize: "-",
+        status: "Pending"
+      });
+
+      updateHistory();
+    }
+
+    function updateStats() {
+      totalWins = historyData.filter(i => i.status === "WIN").length;
+      totalLosses = historyData.filter(i => i.status === "LOSS").length;
+      const total = totalWins + totalLosses;
+      const accuracy = total > 0 ? ((totalWins / total) * 100).toFixed(2) : "0";
+      document.getElementById("totalWins").innerText = totalWins;
+      document.getElementById("totalLosses").innerText = totalLosses;
+      document.getElementById("accuracy").innerText = `${accuracy}%`;
+    }
+
+    function updateHistory() {
+      const div = document.getElementById("history");
+      div.innerHTML = `<h2>Prediction History</h2>` + historyData.map(item => `
+        <div class="history-item ${item.status.toLowerCase()}">
+          <strong>Period:</strong> ${item.period}<br>
+          <strong>Prediction:</strong> ${item.predictedSize} (${item.predictedNumber})<br>
+          <strong>Result:</strong> ${item.actualNumber !== "-" ? item.actualNumber : "Waiting"}<br>
+          <strong>Status:</strong> ${item.status}
+        </div>
+      `).join('');
+    }
+
+    setInterval(updatePrediction, 4000);
+  </script>
+</body>
+</html>
