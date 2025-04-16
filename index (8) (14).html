@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HACKER ABU</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: url('https://img.eselt.de/img/17621587_zm0hbxStuiPFLR5i/ad.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: #000;
+      text-align: center;
+      padding: 20px;
+    }
+    #stats,
+    #currentPrediction,
+    #nextPredictions,
+    #history,
+    .history-item {
+      background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(255, 192, 203, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 15px;
+      margin: 10px 0;
+    }
+    h1 { 
+      color: deeppink; 
+      text-shadow: 1px 1px 2px white;
+    }
+    .win {
+      color: green;
+      animation: pulse 1s infinite alternate;
+    }
+    .loss { color: red; }
+    .pending { color: orange; }
+    @keyframes pulse {
+      from { transform: scale(1); }
+      to { transform: scale(1.05); }
+    }
+    .fire {
+      font-size: 20px;
+      margin-left: 10px;
+    }
+    .red { color: red; }
+    .green { color: green; }
+  </style>
+</head>
+<body>
+  <h1>HACKER ABU</h1>
+
+  <div id="stats">
+    <p>💸 Wins: <span id="totalWins">0</span> |💔 Losses: <span id="totalLosses">0</span> | 🎯🏹 Accuracy: <span id="accuracy">0%</span></p>
+  </div>
+
+  <div id="currentPrediction">
+    <p>🗓️ Period: <span id="currentPeriod">-</span></p>
+    <p>⚡ Prediction: <strong><span id="prediction">-</span></strong></p>
+    <p>🎯 Exact Number: <strong><span id="exactNumber">-</span></strong></p>
+    <p>💥 Opposite Number: <strong><span id="oppositeNumber">-</span></strong></p>
+    <p id="resultText">Result: - | Status: Pending</p>
+  </div>
+
+  <div id="nextPredictions">
+    <h3>Next Predictions</h3>
+    <ul id="nextList"></ul>
+  </div>
+
+  <div id="history">
+    <h3>History</h3>
+  </div>
+
+  <script>
+    let historyData = [];
+    let totalWins = 0;
+    let totalLosses = 0;
+    let lastFetchedPeriod = null;
+
+    function getOppositeNumbersAI(predictedNum) {
+      const mirrorMap = { 0: 9, 1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1, 9: 0 };
+      return [mirrorMap[predictedNum]];
+    }
+
+    function predictAI() {
+      const recent = historyData.slice(0, 20)
+        .map(item => Number(item.result))
+        .filter(num => !isNaN(num));
+
+      if (recent.length < 5) {
+        return {
+          color: Math.random() < 0.5 ? "green" : "red",  // Random choice for color
+          exact: Math.floor(Math.random() * 10)
+        };
+      }
+
+      let redCount = 0, greenCount = 0;
+      for (let num of recent) {
+        if (num >= 5) greenCount++;
+        else redCount++;
+      }
+
+      let predictionColor = greenCount > redCount ? "green" : "red";
+
+      // Get most frequent number in last 20
+      let freq = Array(10).fill(0);
+      for (let num of recent) freq[num]++;
+      let predictedNumber = freq.indexOf(Math.max(...freq));
+
+      return {
+        color: predictionColor,
+        exact: predictedNumber
+      };
+    }
+
+    async function fetchGameResult() {
+      try {
+        let response = await fetch("https://api.bdg88zf.com/api/webapi/GetNoaverageEmerdList", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageSize: 10, pageNo: 1, typeId: 1, language: 0,
+            random: "4a0522c6ecd8410496260e686be2a57c",
+            signature: "334B5E70A0C9B8918B0B15E517E2069C",
+            timestamp: Math.floor(Date.now() / 1000)
+          })
+        });
+        if (!response.ok) throw new Error(`HTTP error! ${response.status}`);
+        let data = await response.json();
+        return data?.data?.list?.[0] || null;
+      } catch (error) {
+        console.error("Fetch error:", error);
+        return null;
+      }
+    }
+
+    async function updatePrediction() {
+      let apiResult = await fetchGameResult();
+      if (!apiResult) return;
+
+      if (apiResult.issueNumber !== lastFetchedPeriod) {
+        const nextPeriod = (BigInt(apiResult.issueNumber) + 1n).toString();
+        const prediction = predictAI();
+        const opposite = getOppositeNumbersAI(prediction.exact);
+
+        document.getElementById("currentPeriod").innerText = nextPeriod;
+        document.getElementById("prediction").innerText = prediction.color;
+        document.getElementById("prediction").className = prediction.color; // Add color class
+        document.getElementById("exactNumber").innerText = prediction.exact;
+        document.getElementById("oppositeNumber").innerText = opposite.join(", ");
+        document.getElementById("resultText").innerHTML = `<span class="pending">Result: - | Status: Pending</span>`;
+
+        historyData.unshift({
+          period: nextPeriod,
+          result: "-",
+          prediction: prediction.color,
+          exact: prediction.exact,
+          opposite,
+          resultStatus: "Pending"
+        });
+
+        if (historyData.length > 1) {
+          let previous = historyData[1];
+          if (previous.resultStatus === "Pending") {
+            let actualNumber = Number(apiResult.number);
+            let actualColor = actualNumber >= 5 ? "green" : "red";
+            let isExactMatch = previous.exact === actualNumber;
+            let isColorMatch = previous.prediction === actualColor;
+            let isOppositeMatch = previous.opposite.includes(actualNumber);
+
+            previous.result = actualNumber;
+            previous.resultStatus = (isExactMatch || isColorMatch || isOppositeMatch) ? "WIN" : "LOSS";
+          }
+        }
+
+        lastFetchedPeriod = apiResult.issueNumber;
+        updateStats();
+        updateHistory();
+        updateNextPredictions();
+      }
+    }
+
+    function updateStats() {
+      totalWins = historyData.filter(i => i.resultStatus === "WIN").length;
+      totalLosses = historyData.filter(i => i.resultStatus === "LOSS").length;
+      let acc = ((totalWins / (totalWins + totalLosses)) * 100 || 0).toFixed(2);
+      document.getElementById("totalWins").innerText = totalWins;
+      document.getElementById("totalLosses").innerText = totalLosses;
+      document.getElementById("accuracy").innerText = acc + "%";
+    }
+
+    function updateHistory() {
+      document.getElementById("history").innerHTML = "<h3>History</h3>" + historyData.map(item => `
+        <div class="history-item ${item.resultStatus.toLowerCase()}">
+          Period: ${item.period} |
+          Prediction: ${item.prediction} |
+          Exact: ${item.exact} |
+          Result: ${item.result} |
+          Opposites: ${item.opposite.join(", ")} |
+          Status: ${item.resultStatus}
+          ${item.resultStatus === "WIN" ? '<span class="fire">🔥</span>' : ''}
+        </div>
+      `).join('');
+    }
+
+    function predictNextThree() {
+      const recent = historyData.slice(0, 20).map(item => Number(item.result)).filter(num => !isNaN(num));
+      if (recent.length < 5) return [];
+
+      let freqMap = {};
+      for (let num of recent) freqMap[num] = (freqMap[num] || 0) + 1;
+      let sorted = Object.entries(freqMap).sort((a, b) => b[1] - a[1]);
+      let predictions = sorted.slice(0, 3).map(([num]) => {
+        num = Number(num);
+        let color = num >= 5 ? "green" : "red";
+        return { periodOffset: sorted.indexOf([num]) + 1, prediction: color, number: num };
+      });
+
+      return predictions;
+    }
+
+    function updateNextPredictions() {
+      const pred = predictNextThree();
+      document.getElementById("nextList").innerHTML = pred.map(p => `<li>+${p.periodOffset}: ${p.prediction} (${p.number})</li>`).join('');
+    }
+
+    setInterval(updatePrediction, 4000);
+  </script>
+</body>
+</html>
