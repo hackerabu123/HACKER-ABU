@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>APNA-BHAI V2.0</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    /* Same styling as before (unchanged) */
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #000;
+      color: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      padding: 20px;
+      max-width: 500px;
+      margin: auto;
+    }
+    .header {
+      font-size: 36px;
+      font-weight: 700;
+      color: #00ffcc;
+      text-align: center;
+      margin-bottom: 20px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      animation: fadeIn 2s ease-in-out;
+      font-family: 'Poppins', sans-serif;
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; transform: translateY(-20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    .card {
+      background: #111;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 5px #00ffcc;
+    }
+    .card label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 14px;
+      color: #00ffcc;
+    }
+    .card input {
+      width: 100%;
+      padding: 8px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: none;
+      background: #222;
+      color: #fff;
+    }
+    .prediction-box {
+      text-align: center;
+      font-size: 20px;
+      padding: 10px;
+      background: #222;
+      border: 1px solid #00ffcc;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+    .history-card {
+      background: #111;
+      border-left: 5px solid #00ffcc;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .history-card.green { border-color: #0f0; }
+    .history-card.red { border-color: #f00; }
+    .history-card.yellow { border-color: #ff0; }
+    .prediction-label {
+      font-weight: bold;
+    }
+    .history-actions i {
+      margin-left: 10px;
+      cursor: pointer;
+    }
+    .win-icon { color: #0f0; }
+    .loss-icon { color: #f00; }
+    .spinner {
+      color: #ff0;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+    .stats {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 16px;
+      display: flex;
+      justify-content: space-around;
+    }
+    .stats div {
+      background: #222;
+      border-radius: 8px;
+      padding: 10px;
+      width: 30%;
+      box-shadow: 0 0 5px #00ffcc;
+    }
+    .stats div i {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 5px;
+    }
+    .history-container {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">APNA-BHAI V3.0</div>
+
+    <div class="card stats">
+      <div>
+        <i class="fa-solid fa-circle-check win-icon"></i>
+        Wins<br><span id="wins">0</span>
+      </div>
+      <div>
+        <i class="fa-solid fa-circle-xmark loss-icon"></i>
+        Losses<br><span id="losses">0</span>
+      </div>
+      <div>
+        <i class="fa-solid fa-bullseye" style="color: #00ffcc;"></i>
+        Accuracy<br><span id="accuracy">0%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <label>Next Period:</label>
+      <input id="periodDisplay" type="text" disabled />
+      <div class="prediction-box">Prediction: <span id="predictionDisplay">--</span></div>
+      <div class="prediction-box">Opposite Number: <span id="oppositeDisplay">--</span></div>
+    </div>
+
+    <div class="card history-container">
+      <label>Prediction History:</label>
+      <div id="historyContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    let historyData = [];
+    let lastFetchedPeriod = null;
+
+    function getOppositeNumber(prediction) {
+      const small = [0,1,2,3,4];
+      const big = [5,6,7,8,9];
+      return prediction === "BIG" ? small[Math.floor(Math.random()*small.length)] : big[Math.floor(Math.random()*big.length)];
+    }
+
+    function predictBigSmallAI(history) {
+      if (history.length === 0) return "BIG";
+      const last = history[0];
+      if (last.resultStatus === "LOSS") {
+        return last.prediction === "BIG" ? "SMALL" : "BIG";
+      }
+      // Else use trend logic
+      const recent = history.slice(0, 20).filter(h => h.result !== "-");
+      const trend = recent.map(item => Number(item.result) >= 5 ? 1 : 0);
+      const sum = trend.reduce((a,b)=>a+b, 0);
+      const avg = sum / trend.length;
+      return avg >= 0.5 ? "SMALL" : "BIG"; // flipped logic
+    }
+
+    async function fetchGameResult() {
+      try {
+        let response = await fetch("https://api.bdg88zf.com/api/webapi/GetNoaverageEmerdList", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageSize: 10, pageNo: 1, typeId: 1, language: 0,
+            random: "4a0522c6ecd8410496260e686be2a57c",
+            signature: "334B5E70A0C9B8918B0B15E517E2069C",
+            timestamp: Math.floor(Date.now()/1000)
+          })
+        });
+        let data = await response.json();
+        return data?.data?.list?.[0] || null;
+      } catch (e) {
+        console.error("API Error", e);
+        return null;
+      }
+    }
+
+    async function updatePrediction() {
+      let result = await fetchGameResult();
+      if (!result || result.issueNumber === lastFetchedPeriod) return;
+
+      if (historyData.length > 0 && historyData[0].resultStatus === "Pending") {
+        let actualSize = Number(result.number) >= 5 ? "BIG" : "SMALL";
+        let last = historyData[0];
+        last.result = result.number;
+        last.resultStatus = (last.prediction === actualSize || last.opposite == result.number) ? "WIN" : "LOSS";
+      }
+
+      let predictionSize = predictBigSmallAI(historyData);
+      let opposite = getOppositeNumber(predictionSize);
+      let nextPeriod = (BigInt(result.issueNumber) + 1n).toString().slice(-5);
+
+      document.getElementById("periodDisplay").value = nextPeriod;
+      document.getElementById("predictionDisplay").innerText = predictionSize;
+      document.getElementById("oppositeDisplay").innerText = opposite;
+
+      historyData.unshift({
+        period: nextPeriod,
+        prediction: predictionSize,
+        opposite: opposite,
+        result: "-",
+        resultStatus: "Pending"
+      });
+
+      if (historyData.length > 1000) historyData.pop();
+
+      updateHistory();
+      updateStats();
+      lastFetchedPeriod = result.issueNumber;
+    }
+
+    function deleteHistory(index) {
+      historyData.splice(index, 1);
+      updateHistory();
+      updateStats();
+    }
+
+    function updateHistory() {
+      const container = document.getElementById("historyContainer");
+      container.innerHTML = historyData.map((item, index) => {
+        let color = item.resultStatus === "WIN" ? "green" : item.resultStatus === "LOSS" ? "red" : "yellow";
+        let iconClass = item.resultStatus === "WIN" ? "fa-check-circle win-icon" :
+                        item.resultStatus === "LOSS" ? "fa-xmark-circle loss-icon" :
+                        "fa-spinner spinner";
+
+        return `
+          <div class="history-card ${color}">
+            <div>
+              <div><i class="fa-solid fa-calendar-days"></i> Period ${item.period}</div>
+              <div class="prediction-label">Prediction: ${item.prediction}</div>
+              <div>Opposite: ${item.opposite}</div>
+              <div>Result: ${item.result}</div>
+            </div>
+            <div class="history-actions">
+              <i class="fa-solid ${iconClass}"></i>
+              <i class="fa-solid fa-trash-alt" onclick="deleteHistory(${index})"></i>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateStats() {
+      const wins = historyData.filter(item => item.resultStatus === "WIN").length;
+      const losses = historyData.filter(item => item.resultStatus === "LOSS").length;
+      const total = wins + losses;
+      const accuracy = total > 0 ? (wins / total) * 100 : 0;
+
+      document.getElementById("wins").innerText = wins;
+      document.getElementById("losses").innerText = losses;
+      document.getElementById("accuracy").innerText = `${accuracy.toFixed(2)}%`;
+    }
+
+    setInterval(updatePrediction, 5000);
+  </script>
+</body>
+</html>
